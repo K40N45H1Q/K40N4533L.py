@@ -1,6 +1,9 @@
 from sys import argv
-from src.config import Config
+from asyncio import run
 from websockets import connect
+try: from src.config import Config
+except ImportError: from config import Config
+
 
 class Client(Config):
     def __init__(self):
@@ -24,3 +27,7 @@ class Client(Config):
 
                 await websocket.send(command)
                 print(await websocket.recv())
+
+
+if __name__ == "__main__":
+    run(Client().run())
